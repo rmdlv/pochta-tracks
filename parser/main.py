@@ -1,9 +1,26 @@
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
 
 from constants import DEFAULT_PARSER, USER_AGENT
 
-from typing import List
+from typing import List, Tuple
+
+TRACKS_PER_POST = 10
+DATE_NUMBER = 55  # January 1, 2021
+
+TRACKING_BASE_URL = (
+    "https://www.pochta.ru/tracking?"
+    + "p_p_id=trackingPortlet_WAR_portalportlet&"
+    + "p_p_lifecycle=2&p_p_state=normal&"
+    + "p_p_mode=view&"
+    + "p_p_resource_id=tracking.get-by-barcodes&"
+    + "p_p_cacheability=cacheLevelPage&"
+    + "p_p_col_id=column-1&"
+    + "p_p_col_count=1&"
+    + "barcodes="
+)
+GEOCODE_BASE_URL = "https://www.pochta.ru/suggestions/v2/postoffice.find-nearest-by-postalcode-vacancies"
 
 
 def get_code_list() -> List[int]:
@@ -21,7 +38,7 @@ def get_code_list() -> List[int]:
 
 def gen_track(post_code: int, month: int, id: int) -> int:
     # https://ru.wikipedia.org/wiki/Почтовый_идентификатор
-    track_string = str(post_code) + str(month).zfill(2) + str(id).zfill(5)
+    track_string = f"{post_code}{month:02d}{id:05d}"
 
     even, odd = [], []
     for position, digit in enumerate(track_string):
@@ -41,7 +58,32 @@ def gen_track(post_code: int, month: int, id: int) -> int:
     return int(track_string)
 
 
+def get_dest_code(track_code: int) -> int:
+    response = requests.get(TRACKING_BASE_URL + str(track_code))
+
+    return response.json()["response"][0]["trackingItem"]["indexTo"]
+
+
+def get_coords_by_code(post_code: int) -> Tuple[float]:
+    response = requests.post(
+        GEOCODE_BASE_URL,
+        json={
+            "currentDateTime": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+            "filters": [],
+            "limit": 1,
+            "offset": 0,
+            "postalCode": post_code,
+            "radius": 100,
+        },
+        headers={"User-Agent": USER_AGENT},
+    )
+    return (response.json()[0]["latitude"], response.json()[0]["longitude"])
+
+
 if __name__ == "__main__":
-    for code in get_code_list():
-        for id in range(10):
-            print(gen_track(code, 55, id))
+    for post_code in get_code_list():
+        for id in range(TRACKS_PER_POST):
+            track_code = gen_track(post_code, DATE_NUMBER, id)
+            dest_code = get_dest_code(track_code)
+            if dest_code:
+                print(dest_code)
