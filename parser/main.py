@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import psycopg2
+from loguru import logger
 
 from constants import DEFAULT_PARSER, USER_AGENT, DB_CREDENTIALS
 
@@ -92,10 +93,11 @@ if __name__ == "__main__":
                 dest_lat, dest_lon = get_coords_by_code(dest_code)
 
                 geometry = (
-                    f"LINESTRING({origin_lat} {origin_lon},{dest_lat} {dest_lon})"
+                    f"LINESTRING({origin_lon} {origin_lat},{dest_lon} {dest_lat})"
                 )
+                logger.info(geometry)
                 cursor.execute(
-                    "INSERT INTO tracks VALUES (%s, %s, ST_GeomFromText(%s))",
+                    "INSERT INTO tracks VALUES (%s, %s, ST_GeomFromText(%s, 4326))",
                     (post_code, dest_code, geometry),
                 )
 
