@@ -1,8 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+import psycopg2
 
-from constants import DEFAULT_PARSER, USER_AGENT
+from constants import DEFAULT_PARSER, USER_AGENT, DB_CREDENTIALS
 
 from typing import List, Tuple
 
@@ -12,7 +13,8 @@ DATE_NUMBER = 55  # January 1, 2021
 TRACKING_BASE_URL = (
     "https://www.pochta.ru/tracking?"
     + "p_p_id=trackingPortlet_WAR_portalportlet&"
-    + "p_p_lifecycle=2&p_p_state=normal&"
+    + "p_p_lifecycle=2&"
+    + "p_p_state=normal&"
     + "p_p_mode=view&"
     + "p_p_resource_id=tracking.get-by-barcodes&"
     + "p_p_cacheability=cacheLevelPage&"
@@ -22,6 +24,9 @@ TRACKING_BASE_URL = (
 )
 GEOCODE_BASE_URL = "https://www.pochta.ru/suggestions/v2/postoffice.find-nearest-by-postalcode-vacancies"
 
+connection = psycopg2.connect(**DB_CREDENTIALS)
+cursor = connection.cursor()
+
 
 def get_code_list() -> List[int]:
     response = requests.get(
@@ -29,11 +34,8 @@ def get_code_list() -> List[int]:
     )
     parser = BeautifulSoup(response.text, DEFAULT_PARSER)
 
-    code_list = []
     for code_block in parser.find_all("td", class_="post-object-list-postalcode"):
-        code_list.append(int(code_block.text))
-
-    return code_list
+        yield int(code_block.text)
 
 
 def gen_track(post_code: int, month: int, id: int) -> int:
@@ -82,8 +84,19 @@ def get_coords_by_code(post_code: int) -> Tuple[float]:
 
 if __name__ == "__main__":
     for post_code in get_code_list():
+        origin_lat, origin_lon = get_coords_by_code(post_code)
         for id in range(TRACKS_PER_POST):
             track_code = gen_track(post_code, DATE_NUMBER, id)
             dest_code = get_dest_code(track_code)
             if dest_code:
-                print(dest_code)
+                dest_lat, dest_lon = get_coords_by_code(dest_code)
+
+                geometry = (
+                    f"LINESTRING({origin_lat} {origin_lon},{dest_lat} {dest_lon})"
+                )
+                cursor.execute(
+                    "INSERT INTO tracks VALUES (%s, %s, ST_GeomFromText(%s))",
+                    (post_code, dest_code, geometry),
+                )
+
+    connection.commit()
