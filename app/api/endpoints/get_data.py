@@ -13,7 +13,7 @@ router = APIRouter()
 
 @router.get("/get_data")
 async def get_data(db: Session = Depends(get_db)):
-    query = db.query(Tracks.coords.ST_AsGeoJSON()).all()
+    query = db.query(Tracks.coords.ST_AsGeoJSON())
 
     return {
         "type": "FeatureCollection",
